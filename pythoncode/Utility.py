@@ -8,15 +8,38 @@ def lorenz_curve(grid_distribution,
                  pdfs,
                  nb_share_grid = 50):
     """
-    parameters
-    ======
-    grid_distribution: grid on which distribution is defined
-    pdfs: the fractions/pdfs of each grid ranges 
+    Computes the inverse Lorenz curve, i.e., the cumulative share of the population 
+    required to account for a given share of total wealth.
+
+    Parameters
+    ----------
+    grid_distribution : array-like
+        Grid over which the distribution is defined (e.g., wealth levels).
+        Should be sorted in ascending order (or will be treated as such).
     
-    return
-    ======
-    lc_vals: the fraction of people corresponding whose total wealth reaches the corresponding share, x axis in lorenz curve
-    share_grids: different grid points of the share of total wealth, y axis in lorenz curve
+    pdfs : array-like
+        Probability mass function or density weights corresponding to each point
+        in the grid. Must sum to 1 (or will be treated as such).
+
+    nb_share_grid : int, optional (default=50)
+        Number of points to compute along the wealth share axis (y-axis of Lorenz curve).
+
+    Returns
+    -------
+    lc_vals : np.ndarray
+        The cumulative share of the population whose total wealth adds up 
+        to the given share of total wealth (x-axis → y-axis mapping of inverse Lorenz).
+
+    share_grids : np.ndarray
+        Array of total wealth share values (from 0 to ~0.99), representing the 
+        x-axis of the Lorenz curve.
+
+    Notes
+    -----
+    This function effectively computes the **inverse** of the standard Lorenz curve.
+    That is, for each target wealth share, it returns the population share needed to 
+    accumulate up to that point in the distribution. It's useful when one is interested 
+    in questions like: "What fraction of people owns the bottom 30% of wealth?"
     """
     total = np.dot(grid_distribution,pdfs)
     share_grids = np.linspace(0.0,0.99,nb_share_grid)
@@ -28,6 +51,50 @@ def lorenz_curve(grid_distribution,
         lc_vals.append(this_lc_val)
     return np.array(lc_vals),share_grids
 
+
+def inverse_lorenz_curve(grid_distribution, pdfs, nb_pop_grid=50):
+    """
+    parameters
+    ==========
+    grid_distribution : array-like
+        Grid values (e.g., wealth levels)
+    pdfs : array-like
+        Probability mass function or distribution weights
+    nb_pop_grid : int
+        Number of equally spaced population share points (x-axis of Lorenz)
+
+    returns
+    =======
+    pop_shares : np.ndarray
+        Population shares (x-axis)
+    wealth_shares : np.ndarray
+        Corresponding cumulative wealth shares (y-axis)
+    """
+    # Sort the distribution by grid (e.g., ascending wealth)
+    sort_idx = np.argsort(grid_distribution)
+    sorted_grid = np.array(grid_distribution)[sort_idx]
+    sorted_pdfs = np.array(pdfs)[sort_idx]
+
+    # Total wealth
+    total_wealth = np.dot(sorted_grid, sorted_pdfs)
+
+    # Cumulative population share
+    pop_cum = sorted_pdfs.cumsum()
+    
+    # Cumulative wealth share
+    wealth_cum = np.multiply(sorted_grid, sorted_pdfs).cumsum() / total_wealth
+
+    # Generate x-axis (population shares)
+    pop_shares = np.linspace(0.0, 0.99, nb_pop_grid)
+    wealth_shares = []
+
+    for p in pop_shares:
+        # Find first index where cumulative population >= p
+        where = min([i for i in range(len(pop_cum)) if pop_cum[i] >= p])
+        w = wealth_cum[where]
+        wealth_shares.append(w)
+
+    return pop_shares, np.array(wealth_shares)
 
 
 # + code_folding=[]
@@ -57,7 +124,7 @@ def wealth_share(grid_distribution,
 
 ## write a function that calculates SCF_lq_share_agents_ap, SCF_lq_share_ap from df, wgt, lqwealth
 
-def get_lorenz_curve(df, var, wgt,nb_share_grid = 200):
+def get_lorenz_curve(df, var, wgt,nb_share_grid = 200,how='wealth_to_population'):
     """
     df: the dataframe
     wgt: the weight variable
@@ -68,10 +135,15 @@ def get_lorenz_curve(df, var, wgt,nb_share_grid = 200):
     var_sort = var[var_sort_id]
     weights_sort = weights[var_sort_id]
     weights_sort_norm = weights_sort/weights_sort.sum()
-    share_agents_ap, share_ap = lorenz_curve(var_sort,
-                                             weights_sort_norm,
-                                             nb_share_grid = nb_share_grid)
-    return share_agents_ap, share_ap
+    if how =='wealth_to_population':
+        share_pop, share_wealth = lorenz_curve(var_sort,
+                                                weights_sort_norm,
+                                                nb_share_grid = nb_share_grid)
+    elif how=='population_to_wealth':
+        share_pop, share_wealth = inverse_lorenz_curve(var_sort,
+                                                        weights_sort_norm,
+                                                        nb_pop_grid = nb_share_grid)
+    return share_pop, share_wealth
 
 ## also get_gini from df, wgt, var
 
